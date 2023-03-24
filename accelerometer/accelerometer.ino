@@ -10,6 +10,8 @@
 #define AVG_DURATION (1 * 1000)
 #define BUFFER_SIZE 60
 
+#define VERBOSE 0
+
 LSM6DS3 gyro(I2C_MODE, 0x6A);
 
 struct Vector
@@ -111,6 +113,7 @@ void sendData()
 {
     Vector gyroscope = { gyro.readFloatGyroX(), gyro.readFloatGyroY(), gyro.readFloatGyroZ() };
 
+#if VERBOSE
     Serial.println("Sending data:");
     Serial.println(FRAME_DURATION);
 
@@ -134,6 +137,7 @@ void sendData()
         Serial.print(accelerations[i].v.z);
         Serial.println("");
     }
+#endif
 
     accCount = 0;
     lastFrameTime = millis();
@@ -151,4 +155,25 @@ void buzz()
     digitalWrite(BUZZER_PIN, HIGH);
     delay(100);
     digitalWrite(BUZZER_PIN, LOW);
+}
+
+Vector getAbsoluteGyro()
+{
+    const float sensi = 0.3;
+    const float zero = 1.569;
+    const float ADC_ref = 5.0;
+
+    int16_t x = gyro.readRawGyroX();
+    int16_t y = gyro.readRawGyroY();
+    int16_t z = gyro.readRawGyroZ();
+
+    float xv = (x / 1024.0 * ADC_ref - zero) / sensi;
+    float yv = (y / 1024.0 * ADC_ref - zero) / sensi;
+    float zv = (z / 1024.0 * ADC_ref - zero) / sensi;
+
+    float ax = atan2(-yv, -zv) * 57.2957795 + 180;
+    float ay = atan2(-xv, -zv) * 57.2957795 + 180;
+    float az = atan2(-yv, -xv) * 57.2957795 + 180;
+
+    return { ax, ay, az };
 }
