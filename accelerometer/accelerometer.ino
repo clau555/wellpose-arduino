@@ -1,14 +1,14 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
+#include "stdint.h"
 
 #define ACCELERATION_SENSITIVITY 2.
-
-#define FLOAT_PRECISION 1
-
-#define LED_PIN 2
-
-// TODO: change or remove in the future
-#define BUFFERS_SIZE 50
+#define BUZZER_PIN 2
+#define LED_PIN 3
+// TODO: Change this
+#define FRAME_DURATION (5 * 1000)
+#define AVG_DURATION (1 * 1000)
+#define BUFFER_SIZE 60
 
 LSM6DS3 gyro(I2C_MODE, 0x6A);
 
@@ -19,10 +19,19 @@ struct Vector
     float z;
 };
 
-Vector accelerations[BUFFERS_SIZE];
-Vector gyroscopes[BUFFERS_SIZE];
+struct AccelerationEntry
+{
+    Vector v;
+    uint64_t timestamp;
+};
 
-int idx = 0;
+AccelerationEntry accelerations[BUFFER_SIZE];
+
+uint8_t accCount = 0;
+uint64_t lastFrameTime = 0;
+uint64_t lastAvgTime = 0;
+bool avgMode = false;
+uint16_t avgCount = 0;
 
 void setup()
 {
@@ -44,27 +53,22 @@ void setup()
 void loop()
 {
     Vector acceleration = { gyro.readFloatAccelX(), gyro.readFloatAccelY(), gyro.readFloatAccelZ() };
-    Vector gyroscope = { gyro.readFloatGyroX(), gyro.readFloatGyroY(), gyro.readFloatGyroZ() };
+    float accNorm = norm(acceleration);
 
-    float aNorm = norm(acceleration);
-    if (aNorm > ACCELERATION_SENSITIVITY && idx < BUFFERS_SIZE)
+    if (avgMode)
     {
-        registerValues(idx, acceleration, gyroscope);
-
-        digitalWrite(LED_PIN, HIGH);
-        delay(100);
-        digitalWrite(LED_PIN, LOW);
-
-        // TODO: send data to server
+        handleAvgMode(acceleration);
     }
-    else if (idx >= BUFFERS_SIZE)
+    else if (accNorm > ACCELERATION_SENSITIVITY)
     {
-        idx = -1;
-    }    
+        registerValues(acceleration);
+    }
 
-    logValues(acceleration, gyroscope);
+    if (millis() > lastFrameTime + FRAME_DURATION) 
+    {
+        sendData();
+    }
 
-    idx++;
     delay(10);
 }
 
@@ -73,31 +77,78 @@ float norm(Vector v)
     return sqrt(sq(v.x) + sq(v.y) + sq(v.z));
 }
 
-void registerValues(int idx, Vector acceleration, Vector gyroscope)
+void handleAvgMode(Vector acceleration)
 {
-    accelerations[idx] = acceleration;
-    gyroscopes[idx] = gyroscope;
+    accelerations[accCount - 1].v.x += acceleration.x;
+    accelerations[accCount - 1].v.y += acceleration.y;
+    accelerations[accCount - 1].v.z += acceleration.z;
+    ++avgCount;
+
+    if (millis() > lastAvgTime + AVG_DURATION)
+    {
+        avgMode = false;
+        accelerations[accCount - 1].v.x /= avgCount;
+        accelerations[accCount - 1].v.y /= avgCount;
+        accelerations[accCount - 1].v.z /= avgCount;
+    }
 }
 
-void logValues(Vector acceleration, Vector gyroscope)
+void registerValues(Vector acceleration)
 {
-    //Accelerometer
-    Serial.print("\nAccelerometer:\n");
-    Serial.print(" X1 = ");
-    Serial.println(acceleration.x, FLOAT_PRECISION);
-    Serial.print(" Y1 = ");
-    Serial.println(acceleration.y, FLOAT_PRECISION);
-    Serial.print(" Z1 = ");
-    Serial.println(acceleration.z, FLOAT_PRECISION);
+    if (accCount < BUFFER_SIZE) 
+    {
+        accelerations[accCount] = { acceleration, millis() - lastFrameTime };
+        accCount++;
+        avgMode = true;
+        lastAvgTime = millis();
+        avgCount = 0;
+    }
 
-    //Gyroscope
-    Serial.print("\nGyroscope:\n");
-    Serial.print(" X1 = ");
-    Serial.println(gyroscope.x, FLOAT_PRECISION);
-    Serial.print(" Y1 = ");
-    Serial.println(gyroscope.y, FLOAT_PRECISION);
-    Serial.print(" Z1 = ");
-    Serial.println(gyroscope.z, FLOAT_PRECISION);
+    blinkLed();
+}
 
-    Serial.print("\n-----------------------\n");
+void sendData() 
+{
+    Vector gyroscope = { gyro.readFloatGyroX(), gyro.readFloatGyroY(), gyro.readFloatGyroZ() };
+
+    Serial.println("Sending data:");
+    Serial.println(FRAME_DURATION);
+
+    Serial.print(gyroscope.x);
+    Serial.print(" ");
+    Serial.print(gyroscope.y);
+    Serial.print(" ");
+    Serial.print(gyroscope.z);
+    Serial.println("");
+
+    Serial.println(accCount);
+
+    for (int i = 0; i < accCount; ++i)
+    {
+        Serial.print((int) accelerations[i].timestamp);
+        Serial.print(" ");
+        Serial.print(accelerations[i].v.x);
+        Serial.print(" ");
+        Serial.print(accelerations[i].v.y);
+        Serial.print(" ");
+        Serial.print(accelerations[i].v.z);
+        Serial.println("");
+    }
+
+    accCount = 0;
+    lastFrameTime = millis();
+}
+
+void blinkLed()
+{
+    digitalWrite(LED_PIN, HIGH);
+    delay(100);
+    digitalWrite(LED_PIN, LOW);
+}
+
+void buzz()
+{
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(100);
+    digitalWrite(BUZZER_PIN, LOW);
 }
