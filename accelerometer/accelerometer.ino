@@ -1,18 +1,24 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
 #include "stdint.h"
+#include <Arduino.h>
+#include <lorae5.h>
+#include "config.h"
 
-#define ACCELERATION_SENSITIVITY 2.
+// LoRaE5 initialisation
+LoraE5 LoRaE5(devEUI, appEUI, appKey, devAddr, nwkSKey, appSKey);
+
+#define ACCELERATION_THRESHOLD 2.
 #define BUZZER_PIN 2
 #define LED_PIN 3
 // TODO: Change this
 #define FRAME_DURATION (5 * 1000)
 #define AVG_DURATION (1 * 1000)
-#define BUFFER_SIZE 60
+#define BUFFER_SIZE 10
 
-#define VERBOSE 0
+#define VERBOSE 1
 
-LSM6DS3 gyro(I2C_MODE, 0x6A);
+LSM6DS3 gyro(I2C_MODE, 0x6A); // I2C device address 0x6A
 
 struct Vector
 {
@@ -35,40 +41,89 @@ uint64_t lastAvgTime = 0;
 bool avgMode = false;
 uint16_t avgCount = 0;
 
+// SETUP ##################################################
+
 void setup()
 {
-    Serial.begin(9600);
-    while (!Serial);
-    
+    LoRa_Serial.begin(9600);
+    USB_Serial.begin(9600);
+    while (!USB_Serial)
+    {
+        USB_Serial.println("Waiting USB_Serial...");
+    };
+
+    setupGyro();
+    setupLoRaWAN();
+ 
+    USB_Serial.println("Setup complete\n");
+
+    // hardware outputs
+    // pinMode(LED_PIN, OUTPUT);
+    // pinMode(BUZZER_PIN, OUTPUT);
+}
+
+void setupGyro()
+{
     if (gyro.begin() != 0)
     {
-        Serial.println("Device error");
+        USB_Serial.println("Accelerometer/Gyroscope error");
     }
     else
     {
-        Serial.println("Device OK!");
+        USB_Serial.println("Accelerometer/Gyroscope OK!");
+    }
+}
+
+void setupLoRaWAN()
+{
+    while(!LoRaE5.checkBoard());
+
+    LoRaE5.setup(ACTIVATION_MODE, CLASS, SPREADING_FACTOR, ADAPTIVE_DR, CONFIRMED, PORT);
+    LoRaE5.printInfo(SEND_BY_PUSH_BUTTON, FRAME_DELAY, LOW_POWER);
+
+    if(ACTIVATION_MODE == OTAA)
+    {
+        LoRaE5.setDevEUI(devEUI);
+        LoRaE5.setAppEUI(appEUI);
+        LoRaE5.setAppKey(appKey);
+        USB_Serial.println("\r\nJoin Procedure in progress...");
+        while(LoRaE5.join() == false);
+        delay(3000);
+    }
+    
+    if(ACTIVATION_MODE == ABP)
+    {
+        LoRaE5.setDevAddr(devAddr);
+        LoRaE5.setNwkSKey(nwkSKey);
+        LoRaE5.setAppSKey(appSKey);
     }
 
-    pinMode(LED_PIN, OUTPUT);
+    USB_Serial.println("LoRaWAN setup complete");
 }
+
+// LOOP ###################################################
 
 void loop()
 {
     Vector acceleration = { gyro.readFloatAccelX(), gyro.readFloatAccelY(), gyro.readFloatAccelZ() };
+    // Vector acceleration = {10., 10., 10. };
     float accNorm = norm(acceleration);
+    
+    Vector gyroscope = { gyro.readFloatGyroX(), gyro.readFloatGyroY(), gyro.readFloatGyroZ() };
+    // Vector gyroscope = {10., 10., 10. };
 
     if (avgMode)
     {
         handleAvgMode(acceleration);
     }
-    else if (accNorm > ACCELERATION_SENSITIVITY)
+    else if (accNorm > ACCELERATION_THRESHOLD)
     {
         registerValues(acceleration);
     }
 
     if (millis() > lastFrameTime + FRAME_DURATION) 
     {
-        sendData();
+        sendData(gyroscope);
     }
 
     delay(10);
@@ -109,33 +164,36 @@ void registerValues(Vector acceleration)
     blinkLed();
 }
 
-void sendData() 
+void sendData(Vector gyroscope) 
 {
-    Vector gyroscope = { gyro.readFloatGyroX(), gyro.readFloatGyroY(), gyro.readFloatGyroZ() };
 
+    // TODO send using LoRaWan
+    
 #if VERBOSE
-    Serial.println("Sending data:");
-    Serial.println(FRAME_DURATION);
+    USB_Serial.println("\n------------");
+    USB_Serial.println("Sending data");
 
-    Serial.print(gyroscope.x);
-    Serial.print(" ");
-    Serial.print(gyroscope.y);
-    Serial.print(" ");
-    Serial.print(gyroscope.z);
-    Serial.println("");
+    USB_Serial.println("\nGyroscope");
 
-    Serial.println(accCount);
+    USB_Serial.print(gyroscope.x);
+    USB_Serial.print(" ");
+    USB_Serial.print(gyroscope.y);
+    USB_Serial.print(" ");
+    USB_Serial.print(gyroscope.z);
+    USB_Serial.println("");
+
+    USB_Serial.println("\nAccelerations");
 
     for (int i = 0; i < accCount; ++i)
     {
-        Serial.print((int) accelerations[i].timestamp);
-        Serial.print(" ");
-        Serial.print(accelerations[i].v.x);
-        Serial.print(" ");
-        Serial.print(accelerations[i].v.y);
-        Serial.print(" ");
-        Serial.print(accelerations[i].v.z);
-        Serial.println("");
+        USB_Serial.print((int) accelerations[i].timestamp);
+        USB_Serial.print(" ");
+        USB_Serial.print(accelerations[i].v.x);
+        USB_Serial.print(" ");
+        USB_Serial.print(accelerations[i].v.y);
+        USB_Serial.print(" ");
+        USB_Serial.print(accelerations[i].v.z);
+        USB_Serial.println("");
     }
 #endif
 
@@ -146,14 +204,14 @@ void sendData()
 void blinkLed()
 {
     digitalWrite(LED_PIN, HIGH);
-    delay(100);
+    delay(1000);
     digitalWrite(LED_PIN, LOW);
 }
 
 void buzz()
 {
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(100);
+    delay(1000);
     digitalWrite(BUZZER_PIN, LOW);
 }
 
