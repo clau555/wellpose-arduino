@@ -240,7 +240,6 @@ def registerValues(state, acceleration):
 
 	state.lastAvgTime = millis()
 	state.avgMode = True
-	beep()
 
 
 def handleResponse(res):
@@ -265,12 +264,12 @@ def handleResponse(res):
 
 	if data["level"] == "0":
 		pass
-	if data["level"] == "1":
+	elif data["level"] == "1":
 		beep()
 	elif data["level"] == "2":
 		beep()
 	else:
-		print("Unknown level: " + data["level"])
+		print("Unknown level: ", data["level"])
 
 
 def sendData(state):
