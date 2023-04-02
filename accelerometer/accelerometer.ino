@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <lorae5.h>
 #include "config.h"
+#include <ArduinoJson.h>
 
 // LoRaE5 initialisation
 LoraE5 LoRaE5(devEUI, appEUI, appKey, devAddr, nwkSKey, appSKey);
@@ -16,7 +17,7 @@ LoraE5 LoRaE5(devEUI, appEUI, appKey, devAddr, nwkSKey, appSKey);
 #define AVG_DURATION (1 * 1000)
 #define BUFFER_SIZE 10
 
-#define VERBOSE 1
+#define VERBOSE 0
 
 LSM6DS3 gyro(I2C_MODE, 0x6A); // I2C device address 0x6A
 
@@ -34,7 +35,6 @@ struct AccelerationEntry
 };
 
 AccelerationEntry accelerations[BUFFER_SIZE];
-
 uint8_t accCount = 0;
 uint64_t lastFrameTime = 0;
 uint64_t lastAvgTime = 0;
@@ -123,7 +123,7 @@ void loop()
 
     if (millis() > lastFrameTime + FRAME_DURATION) 
     {
-        sendData(gyroscope);
+        sendData(gyroscope, accelerations);
     }
 
     delay(10);
@@ -164,11 +164,33 @@ void registerValues(Vector acceleration)
     blinkLed();
 }
 
-void sendData(Vector gyroscope) 
-{
 
-    // TODO send using LoRaWan
-    
+void sendData(Vector gyroscope, AccelerationEntry* accelerations) 
+{
+    USB_Serial.println(gyroscope.x);
+
+    // parsing data to json
+    DynamicJsonDocument doc(200);
+    JsonObject obj = doc.to<JsonObject>();
+    obj["duration"] = 0;
+    obj["orientation"]["x"] = gyroscope.x;
+    obj["orientation"]["y"] = gyroscope.y;
+    obj["orientation"]["z"] = gyroscope.z;
+    for (int i = 0; i < accCount; ++i)
+    {
+        obj["accelerations"][i]["acceleration"]["x"] = accelerations[i].v.x;
+        obj["accelerations"][i]["acceleration"]["y"] = accelerations[i].v.y;
+        obj["accelerations"][i]["acceleration"]["z"] = accelerations[i].v.z;
+        obj["accelerations"][i]["dt"] = (int) accelerations[i].timestamp;
+    }
+
+    // json to string
+    String jsonString;
+    serializeJson(doc, Serial);
+
+    // sending data to distant server
+    LoRaE5.sendMsg(STRING, jsonString);
+
 #if VERBOSE
     USB_Serial.println("\n------------");
     USB_Serial.println("Sending data");

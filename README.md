@@ -15,3 +15,4 @@ in
 
 - https://github.com/Seeed-Studio/Seeed_Arduino_LSM6DS3
 - https://github.com/SylvainMontagny/LoRaE5/tree/main
+- https://github.com/bblanchon/ArduinoJson
