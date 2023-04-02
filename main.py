@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 
 from __future__ import print_function, division, unicode_literals
@@ -17,8 +18,7 @@ import urllib2
 ACCELERATION_SENSITIVITY = 0.1
 AVG_DURATION = 0.5 * 1000
 FRAME_DURATION = 5 * 1000
-# API_URL = "https://wellpose.ythepaut.com"
-API_URL = "https://38fc-185-234-70-28.eu.ngrok.io"
+API_URL = "https://wellpose.ythepaut.com"
 API_ENDPOINT = "/api/activity"
 
 ################################################################################
@@ -262,14 +262,14 @@ def handleResponse(res):
 		print("No level in response: " + res)
 		return
 
-	if data["level"] == "0":
+	if data["level"] == 0:
 		pass
-	elif data["level"] == "1":
+	elif data["level"] == 1:
 		beep()
-	elif data["level"] == "2":
+	elif data["level"] == 2:
 		beep()
 	else:
-		print("Unknown level: ", data["level"])
+		print("Unknown level:", data["level"])
 
 
 def sendData(state):
@@ -335,9 +335,20 @@ def loop(state):
 
 
 def main():
-	state = State()
+	print("start")
+
+	state = None
+	while state is None:
+		try:
+			state = State()
+		except IOError:
+			print("init error")
+			time.sleep(1)
+
 	GPIO_B.setmode(GPIO_B.BCM)
 	GPIO_B.setup(BUZZER_PIN, GPIO.OUT)
+	GPIO_B.output(BUZZER_PIN, 0)
+	beep()
 
 	finished = False
 	while not finished:
@@ -345,7 +356,7 @@ def main():
 			loop(state)
 			time.sleep(0.01)
 		except KeyboardInterrupt:
-			print("Program interrupted by user")
+			print("end")
 			finished = True
 
 	GPIO_B.cleanup()
